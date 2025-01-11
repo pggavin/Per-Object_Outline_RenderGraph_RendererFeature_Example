@@ -35,32 +35,32 @@ Shader "Hidden/Dilation"
             float4 frag_vertical(Varyings i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-
-                // Dilate
-                float totalWeightedValues = 0;
-                int shortestActivePixelDistance = _Spread + 1;
-                float3 nearestActivePixelColor = float3(0, 0, 0);
+            
+                // dilate with blending
+                float3 blendedColor = float3(0, 0, 0);
+                float totalWeight = 0;
+            
                 for (int x = -_Spread; x <= _Spread; x++)
                 {
                     float2 uv = i.texcoord + float2(_BlitTexture_TexelSize.x * x, 0.0f);
                     float4 buffer = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_BlitTexture, uv);
-
-                    // Check if this is the nearest occupied pixel
-                    // (Occupied means non-black here)
+            
+                    // smoother blending
                     int distance = abs(x);
-                    float falloff = 1.0f - distance / _Spread;
-                    totalWeightedValues += buffer.a * falloff;
-
-                    if (distance < shortestActivePixelDistance &&
-                        buffer.a >= 1.0)
-                    {
-                        shortestActivePixelDistance = distance;
-                        nearestActivePixelColor = buffer.xyz;
-                    }
+                    float falloff = exp(-pow(distance / _Spread, 2)); // gaussian falloff
+                    float weight = buffer.a * falloff;
+            
+                    blendedColor += buffer.xyz * weight;
+                    totalWeight += weight;
                 }
-
-                return float4(nearestActivePixelColor, 1 - saturate(shortestActivePixelDistance / _Spread));
+            
+                // normalize the color by the total weight
+                blendedColor /= max(totalWeight, 0.0001f); // no division by zero
+                float alpha = saturate(totalWeight / _Spread);
+            
+                return step(0.5,float4(blendedColor, alpha));
             }
+
             ENDHLSL
         }
 
@@ -86,32 +86,30 @@ Shader "Hidden/Dilation"
             float4 frag_horizontal(Varyings i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-
-                // Dilate
-                float totalWeightedValues = 0;
-                float3 brightestActivePixelColor = float3(0, 0, 0);
-                float brightestWeightedAlpha = 0;
+            
+                // dilate with blending
+                float3 blendedColor = float3(0, 0, 0);
+                float totalWeight = 0;
+            
                 for (int y = -_Spread; y <= _Spread; y++)
                 {
                     float2 uv = i.texcoord + float2(0.0f, _BlitTexture_TexelSize.y * y);
                     float4 buffer = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_BlitTexture, uv);
-
-                    // Check if this is the nearest occupied pixel
-                    // (Occupied means non-black here)
+            
+                    // smoother blending
                     int distance = abs(y);
-                    float falloff = 1.0f - distance / _Spread;
-                    float weightedValue = buffer.a * falloff;
-                    totalWeightedValues += weightedValue;
-
-                    // favor the brightest, nearest alpha
-                    if (weightedValue > brightestWeightedAlpha)
-                    {
-                        brightestWeightedAlpha = weightedValue;
-                        brightestActivePixelColor = buffer.xyz;
-                    }
+                    float falloff = exp(-pow(distance / _Spread, 2)); // gaussian falloff
+                    float weight = buffer.a * falloff;
+            
+                    blendedColor += buffer.xyz * weight;
+                    totalWeight += weight;
                 }
-
-                return float4(brightestActivePixelColor, Smoothstep01(brightestWeightedAlpha));
+            
+                // normalize the color by the total weight
+                blendedColor /= max(totalWeight, 0.0001f); // no division by zero
+                float alpha = saturate(totalWeight / _Spread);
+            
+                return step(0.5,float4(blendedColor, alpha));
             }
             ENDHLSL
         }
